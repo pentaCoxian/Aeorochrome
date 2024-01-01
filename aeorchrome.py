@@ -1,118 +1,72 @@
 import numpy as np
 import cv2
 
-def screen_blend(image1, image2):
-    result = 255 - cv2.divide(255 - image1, 255 - image2, scale=256.0)
-    return result
-
-def controller(img, brightness=255, contrast=127): 
-    brightness = int((brightness - 0) * (255 - (-255)) / (510 - 0) + (-255)) 
-  
-    contrast = int((contrast - 0) * (127 - (-127)) / (254 - 0) + (-127)) 
-  
-    if brightness != 0: 
-        if brightness > 0: 
-            shadow = brightness 
-            max = 255
-        else: 
-            shadow = 0
-            max = 255 + brightness 
-        al_pha = (max - shadow) / 255
-        ga_mma = shadow 
-        
-        cal = cv2.addWeighted(img, al_pha, 
-                              img, 0, ga_mma) 
-    else: 
-        cal = img 
-  
-    if contrast != 0: 
-        Alpha = float(131 * (contrast + 127)) / (127 * (131 - contrast)) 
-        Gamma = 127 * (1 - Alpha) 
-  
-        cal = cv2.addWeighted(cal, Alpha, 
-                              cal, 0, Gamma) 
-
-    return cal
-
-def channel_mix(blue_channel,green_channel,red_channel,color):
+def channel_swap(img,color):
+    height, width = img.shape
+    return_img = np.zeros((height, width, 3), dtype=np.uint8)
     if color == "red":
-        merged_image = np.zeros((height, width, 3), dtype=np.uint8)
-        green_channel_2 = merged_image[:, :, 0]
-        blue_channel_2 = merged_image[:, :, 1]
-        red_channel_2 = merged_image[:, :, 2]
-        blue_channel_2[:] = 0
-        green_channel_2[:] = cv2.cvtColor(red_channel,cv2.COLOR_BGR2GRAY)
-        red_channel_2[:] = 0
-        merged_image = cv2.merge([blue_channel_2, green_channel_2, red_channel_2])     
+        return_img[:,:,0] = 0 
+        return_img[:,:,1] = img[:,:]
+        return_img[:,:,2] = 0
     elif color == "green":
-        merged_image = np.zeros((height, width, 3), dtype=np.uint8)
-        green_channel_2 = merged_image[:, :, 0]
-        blue_channel_2 = merged_image[:, :, 1]
-        red_channel_2 = merged_image[:, :, 2]
-        red_channel_2[:] = cv2.cvtColor(green_channel,cv2.COLOR_BGR2GRAY) 
-        blue_channel_2[:] = 0
-        green_channel_2[:] = 0
-        merged_image = cv2.merge([blue_channel_2, green_channel_2, red_channel_2])     
+        return_img[:,:,0] = img[:,:]
+        return_img[:,:,1] = 0
+        return_img[:,:,2] = 0
     else:
-        merged_image = np.zeros((height, width, 3), dtype=np.uint8)
-        green_channel_2 = merged_image[:, :, 0]
-        blue_channel_2 = merged_image[:, :, 1]
-        red_channel_2 = merged_image[:, :, 2]
-        red_channel_2[:] =  0
-        green_channel_2[:] = 0
-        blue_channel_2[:] = cv2.cvtColor(blue_channel,cv2.COLOR_BGR2GRAY)
-        merged_image = cv2.merge([blue_channel_2, green_channel_2, red_channel_2])     
-      
-    return merged_image
+        return_img[:,:,0] = 0
+        return_img[:,:,1] = 0
+        return_img[:,:,2] = img[:,:]
+    return return_img
 
 def screen_blend(bg_img, fg_img):
     result = np.zeros(bg_img.shape)
     result = 1 - ((1 - bg_img) * (1 - fg_img))
     return result
 
-input_image = cv2.imread("./IMGP0221.jpg",)
-g,b,r = cv2.split(input_image)
+def tone_curve(lut_in,lut_out):
+    lut_8u = np.interp(np.arange(0, 256), lut_in, lut_out).astype(np.uint8)
+    return lut_8u
 
-height, width= g.shape[:2]
+input_image = cv2.imread("./IMGP0220.jpg")
+b,g,r = cv2.split(input_image)
 
-r_image = np.zeros((height, width, 3), dtype=np.uint8)
-green_channel = r_image[:, :, 0]
-blue_channel = r_image[:, :, 1]
-red_channel = r_image[:, :, 2]
-blue_channel[:] = r
-green_channel[:] = r
-red_channel[:] = r
-new_r_image = cv2.merge([blue_channel, green_channel, red_channel])
-new_r_image = controller(new_r_image,brightness=260,contrast=130)
+lut_in = [0, 50, 255]
+lut_out = [0, 90, 255]
+g = cv2.LUT(g, tone_curve(lut_in,lut_out))
 
-g_image = np.zeros((height, width, 3), dtype=np.uint8)
-green_channel = g_image[:, :, 0]
-blue_channel = g_image[:, :, 1]
-red_channel = g_image[:, :, 2]
-blue_channel[:] = g
-green_channel[:] = g
-red_channel[:] = g
-new_g_image = cv2.merge([blue_channel, green_channel, red_channel])
-new_g_image = new_g_image + 60
-new_g_image = controller(new_g_image,brightness=300,contrast=195)
+# convert to 32bit float for subtraction
+b_float = b.astype(np.float32)
+g_float = g.astype(np.float32)
+r_float = r.astype(np.float32)
 
-b_image = np.zeros((height, width, 3), dtype=np.uint8)
-green_channel = b_image[:, :, 0]
-blue_channel = b_image[:, :, 1]
-red_channel = b_image[:, :, 2]
-blue_channel[:] = b
-green_channel[:] = b
-red_channel[:] = b
-new_b_image = cv2.merge([blue_channel, green_channel, red_channel])
-new_b_image = new_b_image + 60
-new_b_image = controller(new_b_image,brightness=250,contrast=165)
+# subtract IR from other channels and return to 8bit
+r = np.clip(r_float - b_float, 0, 255).astype(np.uint8)
+g = np.clip(g_float - b_float, 0, 255).astype(np.uint8)
 
-infra_merged = channel_mix(new_b_image,new_g_image,new_r_image,"blue")
-green_merged = channel_mix(new_b_image,new_g_image,new_r_image,"green")
-red_merged = channel_mix(new_b_image,new_g_image,new_r_image,"red")
+cv2.namedWindow("Aeorochromeb", cv2.WINDOW_NORMAL)
+cv2.imshow("Aeorochromeb", b)
 
-result = screen_blend(green_merged,red_merged)
-result = screen_blend(infra_merged,result)
+lut_in = [0, 50, 255]
+lut_out = [0, 90, 255]
+b = cv2.LUT(b, tone_curve(lut_in,lut_out))
+
+cv2.namedWindow("Aeorochromeb2", cv2.WINDOW_NORMAL)
+cv2.imshow("Aeorochromeb2", b)
+
+lut_in = [0,30, 255]
+lut_out = [0,20, 255]
+r = cv2.LUT(r, tone_curve(lut_in,lut_out))
+
+red_merged = channel_swap(b,"blue")
+blue_merged = channel_swap(g,"green")
+green_merged = channel_swap(r,"red")
+
+result = screen_blend(blue_merged,green_merged)
+result = screen_blend(red_merged,result)
+
+lut_in = [0, 130, 255]
+lut_out = [0, 200, 255]
+result = cv2.LUT(result, tone_curve(lut_in,lut_out))
 
 cv2.namedWindow("Aeorochrome", cv2.WINDOW_NORMAL)
 cv2.imshow("Aeorochrome", result)
